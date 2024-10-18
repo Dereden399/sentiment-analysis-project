@@ -7,6 +7,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split
 from sklearn import svm, tree
 from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
 
 # Load data
 train_df = pd.read_json('data/train.json')
@@ -61,12 +62,12 @@ print("Test data shape: ", X_test.shape)
 print("Data vectorization completed!")
 '''
 
-# Train model using SVM
+'''# Train model using SVM
 clf = svm.SVC(C=1.0, kernel='linear', class_weight='balanced')
 clf.fit(X_train, train_df['sentiments'])
 
 # Predict
-train_preds = clf.predict(X_val)
+train_preds = clf.predict(X_val)'''
 
 
 '''# Train model using Decision Tree
@@ -83,6 +84,13 @@ clf.fit(X_train, train_df['sentiments'])
 # Predict
 train_preds = clf.predict(X_val)'''
 
+# Train model using MLP
+clf = MLPClassifier(hidden_layer_sizes=(100,100), max_iter=1000)
+clf.fit(X_train, train_df['sentiments'])
+
+# Predict
+train_preds = clf.predict(X_val)
+
 
 # Evaluate
 from sklearn.metrics import accuracy_score
@@ -97,5 +105,5 @@ from sklearn.metrics import confusion_matrix
 cm = confusion_matrix(val_df['sentiments'], train_preds)
 disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=clf.classes_)
 disp.plot()
-disp.ax_.set_title(f"Accuracy: {accuracy:.2f}")
+disp.ax_.set_title(f"Accuracy: {accuracy*100:.2f}")
 plt.show()
