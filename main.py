@@ -1,108 +1,88 @@
 import pandas as pd
 import numpy as np
-import torch
-
-from transformers import BertModel, BertTokenizer, DistilBertTokenizer, DistilBertModel
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split
-from sklearn import svm, tree
-from sklearn.linear_model import LogisticRegression
-from sklearn.neural_network import MLPClassifier
+from sklearn.metrics import accuracy_score
+import re
+import nltk
+from nltk.corpus import stopwords
 
-LOAD_FROM_FILES = True
+from classes import TfidfTransformer, BertTransformer, Transformer, SVMModel, Model, MLPModel, LogisticRegressionModel, DecisionTreeModel
+
+LOAD_PICKLED = True
+TRANSFORMER_TYPE = "Tfidf"
+MODEL_TYPE = "MLP"
+VALIDATION_SIZE = 0.15
+RANDOM_STATE = 100
+ITERATIONS = 3
+
+transformerMappings = {
+  "Tfidf": TfidfTransformer,
+  "Bert": BertTransformer
+}
+modelMappings = {
+  "SVM": SVMModel,
+  "DecisionTree": DecisionTreeModel,
+  "LogisticRegression": LogisticRegressionModel,
+  "MLP": MLPModel
+}
+
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
+def preprocess_text(text):
+  # Remove non-alphabetic characters and convert to lowercase
+  text = re.sub(r'[^a-zA-Z\s]', '', text)
+  text = text.lower()
+  
+  # Tokenize and remove stopwords
+  tokens = text.split()
+  tokens = [word for word in tokens if word not in stop_words]
+  return ' '.join(tokens)
+
 # Load data
 train_df = pd.read_json('data/train.json')
+test_df = pd.read_json('data/test.json')
 
-if LOAD_FROM_FILES:
-  X_df = np.load('data/train.npy', allow_pickle=True)
-  print("All data shape:", X_df.shape)
+# Preprocess data
+train_df['reviews'] = train_df['reviews'].apply(preprocess_text)
 
-  X_test = np.load('data/test.npy', allow_pickle=True)
+if TRANSFORMER_TYPE not in transformerMappings:
+  raise ValueError(f"Invalid transformer type: {TRANSFORMER_TYPE}")
+transformer: Transformer = transformerMappings[TRANSFORMER_TYPE](train_df['reviews'])
+if MODEL_TYPE not in modelMappings:
+  raise ValueError(f"Invalid model type: {MODEL_TYPE}")
+model: Model = modelMappings[MODEL_TYPE](RANDOM_STATE)
+
+if LOAD_PICKLED:
+  data = np.load('data/pickled.npz', allow_pickle=True)
+  X_df = data['train']
+  X_test = data['test']
 else:
-  '''# Vectorize data using TF-IDF
-  vectorizer = TfidfVectorizer()
-  vectorizer = vectorizer.fit(train_df['reviews'])
-  X_df = vectorizer.transform(train_df['reviews'])
-  print("All data shape:", X_df.shape)
-  # Save to file
-  np.save('data/train.npy', X_df.toarray())
-
-  test_df = pd.read_json('data/test.json')
-  X_test = vectorizer.transform(test_df['reviews'])
-  # Save to file
-  np.save('data/test.npy', X_test.toarray())'''
-  # Vectorize data using BERT
-
-  tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
-  model = DistilBertModel.from_pretrained('distilbert-base-uncased')
-  model.eval()
-  def get_bert_embeddings(text):
-    # Tokenize and encode input text
-    inputs = tokenizer(text, return_tensors='pt', truncation=True, padding=True, max_length=512)
-
-    # Get BERT embeddings (we use the output of the last hidden state)
-    with torch.no_grad():
-      outputs = model(**inputs)
-
-    # We can use the [CLS] token embedding for classification tasks (first token output)
-    cls_embedding = outputs.last_hidden_state[:, 0, :].squeeze().numpy()
-    return cls_embedding
-
-  print("Start vectorizing data using BERT...")
-
-  X_df = np.array([get_bert_embeddings(text) for text in train_df['reviews']])
-  print("Train vectorized")
-
-  # Save to file
-  np.save('data/train.npy', X_df)
-
-  test_df = pd.read_json('data/test.json')
-  X_test = np.array([get_bert_embeddings(text) for text in test_df['reviews']])
-  print("Test vectorized")
-  # Save to file
-  np.save('data/test.npy', X_test)
-
-  print("Data vectorization completed!")
+  X_df = transformer.transform(train_df['reviews'])
+  X_test = transformer.transform(test_df['reviews'])
+  
+  np.savez_compressed('data/pickled', train=X_df.toarray(), test=X_test.toarray())
 
 # Split data
-X_train, X_val, y_train, y_val = train_test_split(X_df, train_df['sentiments'], test_size=0.3)
+X_train, X_val, y_train, y_val = train_test_split(X_df, train_df['sentiments'], test_size=VALIDATION_SIZE, random_state=RANDOM_STATE)
+print("All data shape:", X_df.shape)
 print("Train data shape:", X_train.shape)
 print("Validation data shape: ", X_val.shape)
 print("Test data shape: ", X_test.shape)
 
 
-'''# Train model using SVM
-clf = svm.SVC(C=1.0, kernel='linear', class_weight='balanced')
-clf.fit(X_train, train_df['sentiments'])
+# Train model
+model.fit(X_train, y_train)
+
 
 # Predict
-train_preds = clf.predict(X_val)'''
-
-
-'''# Train model using Decision Tree
-clf = tree.DecisionTreeClassifier()
-clf.fit(X_train, train_df['sentiments'])
-
-# Predict
-train_preds = clf.predict(X_val)'''
-
-'''# Train model using Logistic Regression
-clf = LogisticRegression()
-clf.fit(X_train, train_df['sentiments'])
-
-# Predict
-train_preds = clf.predict(X_val)'''
-
-# Train model using MLP
-clf = MLPClassifier(hidden_layer_sizes=(100,100), max_iter=1000)
-clf.fit(X_train, y_train)
-
-# Predict
-train_preds = clf.predict(X_val)
-
+avgAccuracy = 0
+for i in range(ITERATIONS):
+  train_preds = model.predict(X_val)
+  avgAccuracy += accuracy_score(y_val, train_preds)
+  print(f"Iteration {i+1} complete")
+avgAccuracy /= ITERATIONS
 
 # Evaluate
-from sklearn.metrics import accuracy_score
 accuracy = accuracy_score(y_val, train_preds)
 print("Total accuracy: ", accuracy)
 
@@ -112,7 +92,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 
 cm = confusion_matrix(y_val, train_preds)
-disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=clf.classes_)
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=model.model.classes_)
 disp.plot()
-disp.ax_.set_title(f"Accuracy: {accuracy*100:.2f}")
+disp.ax_.set_title(f"Last iteration of {model.name()}\nAverage accuracy: {avgAccuracy*100:.2f}%")
 plt.show()
