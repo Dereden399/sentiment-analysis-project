@@ -15,6 +15,8 @@ VALIDATION_SIZE = 0.15
 RANDOM_STATE = 100
 ITERATIONS = 3
 
+SUBMISSION = True
+
 transformerMappings = {
   "Tfidf": TfidfTransformer,
   "Bert": BertTransformer
@@ -62,6 +64,20 @@ else:
   
   np.savez_compressed('data/pickled', train=X_df.toarray(), test=X_test.toarray())
 
+if SUBMISSION:
+  # Split data
+  X_train = X_df
+  y_train = train_df['sentiments']
+  print("All data shape:", X_df.shape)
+  print("Train data shape:", X_train.shape)
+  print("Test data shape: ", X_test.shape)
+  model.fit(X_train, y_train)
+  # Predict
+  test_preds = model.predict(X_test)
+  test_df['sentiments'] = test_preds
+  test_df.to_csv('data/submission.csv', index=False)
+  print("Submission file created")
+  exit()
 # Split data
 X_train, X_val, y_train, y_val = train_test_split(X_df, train_df['sentiments'], test_size=VALIDATION_SIZE, random_state=RANDOM_STATE)
 print("All data shape:", X_df.shape)
@@ -72,7 +88,6 @@ print("Test data shape: ", X_test.shape)
 
 # Train model
 model.fit(X_train, y_train)
-
 
 # Predict
 avgAccuracy = 0
